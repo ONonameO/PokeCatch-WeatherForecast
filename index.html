@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Poke'Catch 天气预报器</title>
+<style>
+:root{--bg:#0f1218;--fg:#e6ebf5;--muted:#93a0b5;--line:#243040;--card:#151a23;--acc:#ffcb05}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,"Segoe UI","Microsoft YaHei",sans-serif}
+main{max-width:1000px;margin:0 auto;padding:28px 18px 70px}
+h1{font-size:24px;margin:0 0 6px}
+.sub{color:var(--muted);font-size:13px;margin-bottom:18px}
+select{background:#1b2230;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:9px 12px;font:inherit;min-width:280px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:16px 0}
+.now{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.now .big{font-size:34px}
+.kv{color:var(--muted);font-size:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;margin-top:12px}
+.cell{border-radius:9px;padding:7px 4px;text-align:center;font-size:12px;background:#1b2230;border:1px solid transparent}
+.cell b{display:block;font-size:16px;line-height:1.3}
+.cell small{color:var(--muted);font-size:10.5px}
+.cell.wx-rain{background:#1e3557;border-color:#2f5c96}
+.cell.wx-storm{background:#33245c;border-color:#5b3fa0}
+.cell.wx-sun{background:#4a3618;border-color:#8a6524}
+.cell.wx-snow{background:#2b3a4d;border-color:#587088}
+.cell.wx-sand{background:#40341f;border-color:#7d6634}
+.cell.wx-ash{background:#3a3330;border-color:#6d5f58}
+.cell.wx-fog{background:#2f3540;border-color:#59616e}
+.cell.wx-breeze{background:#223c39;border-color:#3f6f68}
+.cell.now-r{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
+.seg{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.seg button{background:#1b2230;border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:7px 12px;font:inherit;font-size:13px;cursor:pointer}
+.seg button.on{background:#2b3648;border-color:var(--acc);color:var(--acc)}
+.alt{display:block;font-size:9.5px;line-height:1.1;color:#a7b9d6;margin-top:2px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
+th{color:var(--acc);font-weight:600}
+.day{margin:14px 0}
+.day h3{margin:0 0 6px;font-size:14px;color:var(--muted);font-weight:600}
+.legend{color:var(--muted);font-size:12px;margin-top:8px}
+#lang{position:fixed;top:12px;right:14px;z-index:10;display:flex;gap:6px}
+#lang button{background:#1b2230;border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:7px 12px;font:inherit;font-size:13px;cursor:pointer}
+#lang button.on{background:#2b3648;border-color:var(--acc);color:var(--acc)}
+</style></head><body><main>
+<div id="lang"><button data-l="zh" class="on">简体中文</button><button data-l="en">English</button></div>
+<h1 data-i18n="h1">Poke'Catch · 天气预报器</h1>
+<div class="sub" data-i18n-html="sub">按 <code>CONFIG.WEATHER</code> 的确定性算法复算：每小时一个槽，<code>FNV("ch+章节号|槽号")</code> 决定有无天气，类型按章节聚合权重抽取，夜晚剔除大晴天。</div>
+
+<div class="card">
+  <label class="kv" data-i18n="chapterLabel">选择你在的章节：</label><br>
+  <select id="ch"></select>
+  <div class="now" style="margin-top:14px">
+    <div class="big" id="nowicon">—</div>
+    <div>
+      <div id="nowname" style="font-size:18px;font-weight:600">—</div>
+      <div class="kv" id="nowtime"></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="kv" data-i18n="daynightLabel">昼夜模式（「有没有天气」不受影响，只有类型会变）</div>
+  <div class="seg" id="mode">
+    <button data-m="real" class="on" data-i18n="modeReal">真实昼夜</button>
+    <button data-m="day" data-i18n="modeDay">强制白天</button>
+    <button data-m="night" data-i18n="modeNight">强制夜晚</button>
+  </div>
+  <div class="legend" data-i18n="modeLegend">强制白天/夜晚 = 把昼夜反转后的结果。真实模式下，若反转后的类型不同，格子里会多一行 ⇄雨 提示。</div>
+</div>
+
+<div class="card">
+  <div class="kv" data-i18n="honeyLabel">甜甜蜜树 · 今日位置与结草儿形态（巴黎时间 00:00 换）</div>
+  <div class="now" style="margin-top:10px">
+    <div class="big">🍯</div>
+    <div>
+      <div id="honeyzone" style="font-size:18px;font-weight:600">—</div>
+      <div class="kv" id="honeymeta"></div>
+    </div>
+  </div>
+  <div class="legend" data-i18n="honeyLegend">形态只看地形 bg，天气不影响；未来 14 天的轮换表放在页面最后。</div>
+</div>
+
+<div class="card">
+  <div class="kv" data-i18n="h24Label">未来 24 小时（每格一小时，空=晴）</div>
+  <div class="grid" id="h24"></div>
+  <div class="legend" data-i18n="h24Legend">黄框 = 当前这一小时。</div>
+</div>
+
+<div class="card">
+  <div class="kv" data-i18n="daysLabel">未来 7 天 · 每天有天气的时段</div>
+  <div id="days"></div>
+</div>
+
+<div class="card">
+  <div class="kv" data-i18n="runsLabel">接下来的天气时段（起始时间）</div>
+  <table><thead><tr><th data-i18n="thStart">开始</th><th data-i18n="thWeather">天气</th><th data-i18n="thFlipped">反转后（日夜对调）</th><th data-i18n="thDuration">持续</th></tr></thead><tbody id="runs"></tbody></table>
+</div>
+
+<div class="card">
+  <div class="kv" data-i18n="allLabel">全部 66 章 · 未来 24 小时的天气时段（用来和游戏里那条对照）</div>
+  <table><thead><tr><th data-i18n="thNum">#</th><th data-i18n="thChapter">章节</th><th data-i18n="thPeriods">时段</th></tr></thead><tbody id="all"></tbody></table>
+</div>
+
+<div class="card">
+  <div class="kv" data-i18n="honeyDaysLabel">甜甜蜜树 · 未来 14 天位置与结草儿形态</div>
+  <table><thead><tr><th data-i18n="thDate">日期</th><th data-i18n="thHoneyLoc">甜甜蜜树位置</th><th data-i18n="thBurmy">结草儿形态</th><th data-i18n="thChapter2">所在章节</th></tr></thead><tbody id="honeydays"></tbody></table>
+  <div class="legend" data-i18n="honeyDaysLegend">形态只看地形 bg：cave / mountain → 砂土蓑衣，town → 垃圾蓑衣，其余 → 草木蓑衣。天气不影响形态。日期按巴黎时间换日。</div>
+</div>
+</main>
+<script>
+const DATA = [{"name": "Badge Roche", "zh": "灰色徽章", "reg": "kanto", "fixed": null, "w": [["rain", 7], ["storm", 1.5]], "en": "Boulder Badge"}, {"name": "Badge Cascade", "zh": "蓝色徽章", "reg": "kanto", "fixed": null, "w": [["rain", 7], ["snow", 1], ["storm", 2.0]], "en": "Cascade Badge"}, {"name": "Badge Foudre", "zh": "橙色徽章", "reg": "kanto", "fixed": null, "w": [["rain", 9], ["storm", 2.5]], "en": "Thunder Badge"}, {"name": "Badge Prisme", "zh": "彩虹徽章", "reg": "kanto", "fixed": null, "w": [["rain", 8], ["snow", 2], ["storm", 2.0]], "en": "Rainbow Badge"}, {"name": "Badge Âme", "zh": "粉红徽章", "reg": "kanto", "fixed": null, "w": [["rain", 8], ["storm", 2.0]], "en": "Soul Badge"}, {"name": "Badge Marais", "zh": "金色徽章", "reg": "kanto", "fixed": null, "w": [["rain", 7], ["storm", 1.5]], "en": "Marsh Badge"}, {"name": "Badge Volcan", "zh": "深红徽章", "reg": "kanto", "fixed": null, "w": [["rain", 6.0], ["storm", 2.0]], "en": "Volcano Badge"}, {"name": "Badge Terre", "zh": "绿色徽章", "reg": "kanto", "fixed": null, "w": [["rain", 10], ["storm", 2.5]], "en": "Earth Badge"}, {"name": "Route Victoire", "zh": "冠军之路", "reg": "kanto", "fixed": null, "w": [["rain", 2], ["snow", 1], ["storm", 0.5]], "en": "Victory Road"}, {"name": "Conseil 4 : Olga", "zh": "四天王：科拿", "reg": "kanto", "fixed": null, "w": null, "en": "Elite Four: Lorelei"}, {"name": "Conseil 4 : Aldo", "zh": "四天王：希巴", "reg": "kanto", "fixed": null, "w": null, "en": "Elite Four: Bruno"}, {"name": "Conseil 4 : Agatha", "zh": "四天王：菊子", "reg": "kanto", "fixed": null, "w": null, "en": "Elite Four: Agatha"}, {"name": "Conseil 4 : Peter", "zh": "四天王：阿渡", "reg": "kanto", "fixed": null, "w": null, "en": "Elite Four: Lance"}, {"name": "Maître de la Ligue", "zh": "联盟冠军", "reg": "kanto", "fixed": null, "w": null, "en": "League Champion"}, {"name": "Badge Zéphyr", "zh": "飞翼徽章", "reg": "johto", "fixed": null, "w": [["rain", 4], ["storm", 1.0]], "en": "Zephyr Badge"}, {"name": "Badge Essaim", "zh": "昆虫徽章", "reg": "johto", "fixed": null, "w": [["rain", 6], ["storm", 1.5]], "en": "Hive Badge"}, {"name": "Badge Plaine", "zh": "平原徽章", "reg": "johto", "fixed": null, "w": [["rain", 7], ["storm", 1.5]], "en": "Plain Badge"}, {"name": "Badge Brume", "zh": "雾徽章", "reg": "johto", "fixed": null, "w": [["rain", 7], ["storm", 1.5]], "en": "Fog Badge"}, {"name": "Badge Choc", "zh": "冲击徽章", "reg": "johto", "fixed": null, "w": [["rain", 7], ["storm", 2.0]], "en": "Storm Badge"}, {"name": "Badge Minéral", "zh": "钢铁徽章", "reg": "johto", "fixed": null, "w": [["rain", 2], ["storm", 0.5]], "en": "Mineral Badge"}, {"name": "Lac Colère", "zh": "愤怒之湖", "reg": "johto", "fixed": "storm", "w": [["rain", 7], ["snow", 1], ["storm", 2.0]], "en": "Lake of Rage"}, {"name": "Badge Glacier", "zh": "冰河徽章", "reg": "johto", "fixed": null, "w": [["rain", 2], ["storm", 0.5]], "en": "Glacier Badge"}, {"name": "Tour Radio", "zh": "广播塔", "reg": "johto", "fixed": null, "w": [["rain", 2]], "en": "Radio Tower"}, {"name": "Badge Lever", "zh": "升龙徽章", "reg": "johto", "fixed": null, "w": [["rain", 7], ["snow", 2], ["storm", 2.0]], "en": "Rising Badge"}, {"name": "Route Victoire", "zh": "冠军之路", "reg": "johto", "fixed": null, "w": [["rain", 4], ["snow", 2], ["storm", 1.0]], "en": "Victory Road"}, {"name": "Conseil 4 : Clément", "zh": "四天王：一树", "reg": "johto", "fixed": null, "w": null, "en": "Elite Four: Will"}, {"name": "Conseil 4 : Koga", "zh": "四天王：阿桔", "reg": "johto", "fixed": null, "w": null, "en": "Elite Four: Koga"}, {"name": "Conseil 4 : Aldo", "zh": "四天王：希巴", "reg": "johto", "fixed": null, "w": null, "en": "Elite Four: Bruno"}, {"name": "Conseil 4 : Marion", "zh": "四天王：梨花", "reg": "johto", "fixed": null, "w": null, "en": "Elite Four: Karen"}, {"name": "Maître de la Ligue", "zh": "联盟冠军", "reg": "johto", "fixed": null, "w": null, "en": "League Champion"}, {"name": "Mont Argenté", "zh": "白银山", "reg": "johto", "fixed": null, "w": [["rain", 4], ["storm", 1.5], ["snow", 4.0]], "en": "Mt. Silver"}, {"name": "Badge Roche (Hoenn)", "zh": "原石徽章", "reg": "hoenn", "fixed": null, "w": [["rain", 8], ["sun", 8], ["storm", 2.0]], "en": "Stone Badge"}, {"name": "Badge Poing", "zh": "拳头徽章", "reg": "hoenn", "fixed": null, "w": [["rain", 5], ["sun", 3], ["storm", 1.5]], "en": "Knuckle Badge"}, {"name": "Badge Dynamo", "zh": "发电徽章", "reg": "hoenn", "fixed": null, "w": [["rain", 6], ["sun", 6], ["storm", 2.0]], "en": "Dynamo Badge"}, {"name": "Badge Chaleur", "zh": "热量徽章", "reg": "hoenn", "fixed": null, "w": [["rain", 4.0], ["sun", 7.0], ["storm", 1.5], ["ash", 4.0]], "en": "Heat Badge"}, {"name": "Mont Chimnée", "zh": "烟囱山", "reg": "hoenn", "fixed": null, "w": [["sun", 3.0], ["rain", 5.0], ["storm", 1.5]], "en": "Mt. Chimney"}, {"name": "Badge Balance", "zh": "平衡徽章", "reg": "hoenn", "fixed": null, "w": [["sand", 6.0], ["sun", 7.0], ["rain", 1], ["storm", 0.5]], "en": "Balance Badge"}, {"name": "Badge Plume", "zh": "羽毛徽章", "reg": "hoenn", "fixed": null, "w": [["rain", 15.0], ["sun", 5.0], ["storm", 4.5]], "en": "Feather Badge"}, {"name": "Mont Mémoria", "zh": "送神山", "reg": "hoenn", "fixed": null, "w": [["rain", 8.0], ["sun", 5], ["storm", 2.0], ["fog", 3.0], ["snow", 1.0]], "en": "Mt. Pyre"}, {"name": "Badge Esprit", "zh": "心灵徽章", "reg": "hoenn", "fixed": null, "w": [["rain", 6], ["sun", 5], ["storm", 1.5]], "en": "Mind Badge"}, {"name": "La crise", "zh": "危机", "reg": "hoenn", "fixed": ["storm", "sun"], "w": [["rain", 3], ["sun", 1], ["storm", 1]], "en": "The Crisis"}, {"name": "Badge Pluie", "zh": "雨滴徽章", "reg": "hoenn", "fixed": null, "w": [["rain", 12], ["sun", 4], ["storm", 4]], "en": "Rain Badge"}, {"name": "Route Victoire", "zh": "冠军之路", "reg": "hoenn", "fixed": null, "w": [["sun", 3], ["rain", 1], ["storm", 0.5]], "en": "Victory Road"}, {"name": "Conseil 4 : Damien", "zh": "四天王：花月", "reg": "hoenn", "fixed": null, "w": null, "en": "Elite Four: Sidney"}, {"name": "Conseil 4 : Spectra", "zh": "四天王：芙蓉", "reg": "hoenn", "fixed": null, "w": null, "en": "Elite Four: Phoebe"}, {"name": "Conseil 4 : Glacia", "zh": "四天王：波妮", "reg": "hoenn", "fixed": null, "w": null, "en": "Elite Four: Glacia"}, {"name": "Conseil 4 : Aragon", "zh": "四天王：源治", "reg": "hoenn", "fixed": null, "w": null, "en": "Elite Four: Drake"}, {"name": "Maître de la Ligue", "zh": "联盟冠军", "reg": "hoenn", "fixed": null, "w": null, "en": "League Champion"}, {"name": "Badge Charbon", "zh": "煤炭徽章", "reg": "sinnoh", "fixed": null, "w": [["rain", 9], ["sun", 3.5], ["storm", 2.5]], "en": "Coal Badge"}, {"name": "Badge Forêt", "zh": "森林徽章", "reg": "sinnoh", "fixed": null, "w": [["rain", 16.0], ["sun", 4.75], ["storm", 5.0]], "en": "Forest Badge"}, {"name": "Badge Fantôme", "zh": "遗迹徽章", "reg": "sinnoh", "fixed": null, "w": [["rain", 8], ["sun", 2.5], ["snow", 4], ["storm", 1.5]], "en": "Relic Badge"}, {"name": "Badge Pavé", "zh": "铺石徽章", "reg": "sinnoh", "fixed": null, "w": [["rain", 12.0], ["sun", 3.0], ["storm", 1.5], ["fog", 1.0]], "en": "Cobble Badge"}, {"name": "Badge Palustre", "zh": "湿地徽章", "reg": "sinnoh", "fixed": null, "w": [["rain", 20.0], ["sun", 5.5], ["storm", 3.0], ["fog", 2.0]], "en": "Fen Badge"}, {"name": "Badge Mine", "zh": "矿山徽章", "reg": "sinnoh", "fixed": null, "w": [["fog", 6.0], ["rain", 6.0], ["sun", 1.0], ["snow", 2], ["storm", 1.5]], "en": "Mine Badge"}, {"name": "Les Lacs", "zh": "三座湖", "reg": "sinnoh", "fixed": null, "w": [["sun", 2.5], ["rain", 7], ["storm", 2.5]], "en": "The Three Lakes"}, {"name": "Badge Glaçon", "zh": "冰河徽章", "reg": "sinnoh", "fixed": null, "w": [["snow", 16.0], ["blizzard", 17.0]], "en": "Icicle Badge"}, {"name": "QG Galaxie", "zh": "银河队基地", "reg": "sinnoh", "fixed": null, "w": [["rain", 2], ["sun", 0.5]], "en": "Team Galactic HQ"}, {"name": "Monde Distorsion", "zh": "毁坏的世界", "reg": "sinnoh", "fixed": null, "w": [["snow", 8.0], ["blizzard", 1.0], ["fog", 1.0], ["rain", 3], ["sun", 0.5], ["storm", 1]], "en": "Distortion World"}, {"name": "Badge Phare", "zh": "灯塔徽章", "reg": "sinnoh", "fixed": null, "w": [["sun", 5.0], ["rain", 6], ["storm", 2.5]], "en": "Beacon Badge"}, {"name": "Route Victoire", "zh": "冠军之路", "reg": "sinnoh", "fixed": null, "w": [["rain", 3], ["sun", 0.5], ["storm", 1]], "en": "Victory Road"}, {"name": "Conseil 4 : Aaron", "zh": "四天王：阿柳", "reg": "sinnoh", "fixed": null, "w": null, "en": "Elite Four: Aaron"}, {"name": "Conseil 4 : Terry", "zh": "四天王：菊野", "reg": "sinnoh", "fixed": null, "w": null, "en": "Elite Four: Bertha"}, {"name": "Conseil 4 : Adrien", "zh": "四天王：大叶", "reg": "sinnoh", "fixed": null, "w": null, "en": "Elite Four: Flint"}, {"name": "Conseil 4 : Lucio", "zh": "四天王：悟松", "reg": "sinnoh", "fixed": null, "w": null, "en": "Elite Four: Lucian"}, {"name": "Maître de la Ligue", "zh": "联盟冠军", "reg": "sinnoh", "fixed": null, "w": null, "en": "League Champion"}, {"name": "Mont Abrupt", "zh": "严酷山", "reg": "sinnoh", "fixed": null, "w": [["rain", 5], ["sun", 2.5], ["snow", 2], ["storm", 1.5], ["ash", 3.0], ["sand", 4.0]], "en": "Stark Mountain"}];
+const HONEY = {"zones": ["Route 205 (sud)", "Route 206", "Route 208", "Route 209", "Route 210 (sud)", "Route 211", "Route 212 (nord)", "Route 214", "Route 215", "Route 218", "Pré de Floraville", "Les Éoliennes", "Forêt Vestigion", "Square Paisible"], "info": {"Route 205 (sud)": {"bg": "prairie", "chapter": "森林徽章"}, "Route 206": {"bg": "mountain", "chapter": "遗迹徽章"}, "Route 208": {"bg": "prairie", "chapter": "遗迹徽章"}, "Route 209": {"bg": "prairie", "chapter": "铺石徽章"}, "Route 210 (sud)": {"bg": "prairie", "chapter": "铺石徽章"}, "Route 211": {"bg": "mountain", "chapter": "矿山徽章"}, "Route 212 (nord)": {"bg": "prairie", "chapter": "湿地徽章"}, "Route 214": {"bg": "prairie", "chapter": "湿地徽章"}, "Route 215": {"bg": "prairie", "chapter": "铺石徽章"}, "Route 218": {"bg": "pier", "chapter": "矿山徽章"}, "Pré de Floraville": {"bg": "prairie", "chapter": "森林徽章"}, "Les Éoliennes": {"bg": "prairie", "chapter": "森林徽章"}, "Forêt Vestigion": {"bg": "forest", "chapter": "森林徽章"}, "Square Paisible": {"bg": "town", "chapter": "遗迹徽章"}}, "rare": [["Square Paisible"], ["Route 206", "Route 211"]], "gap": [7, 14], "from": "2026-11-02", "pool": [[412, 30], [415, 25], [420, 20], [265, 10], [190, 8], [214, 5], [446, 2]]};
+const SLOT = 3600000, CHANCE = 0.54;
+const ICON = {rain:'🌧️',storm:'⛈️',sun:'🔆',sand:'🌪️',snow:'❄️',ash:'🌋',fog:'🌫️',blizzard:'🌨️',breeze:'🍃'};
+
+let L = (function(){
+  const saved = localStorage.getItem('pc_lang');
+  if(saved==='zh'||saved==='en') return saved;
+  const nav = (navigator.language||'zh-CN').toLowerCase();
+  return nav.startsWith('zh') ? 'zh' : 'en';
+})();
+const LOC = {zh:'zh-CN', en:'en-US'};
+const T = {
+  zh:{ title:'Poke\'Catch 天气预报器', h1:'Poke\'Catch · 天气预报器',
+    sub:'按 <code>CONFIG.WEATHER</code> 的确定性算法复算：每小时一个槽，<code>FNV("ch+章节号|槽号")</code> 决定有无天气，类型按章节聚合权重抽取，夜晚剔除大晴天。',
+    chapterLabel:'选择你在的章节：', daynightLabel:'昼夜模式（「有没有天气」不受影响，只有类型会变）',
+    modeReal:'真实昼夜', modeDay:'强制白天', modeNight:'强制夜晚',
+    modeLegend:'强制白天/夜晚 = 把昼夜反转后的结果。真实模式下，若反转后的类型不同，格子里会多一行 ⇄雨 提示。',
+    honeyLabel:'甜甜蜜树 · 今日位置与结草儿形态（巴黎时间 00:00 换）',
+    honeyLegend:'形态只看地形 bg，天气不影响；未来 14 天的轮换表放在页面最后。',
+    h24Label:'未来 24 小时（每格一小时，空=晴）', h24Legend:'黄框 = 当前这一小时。',
+    daysLabel:'未来 7 天 · 每天有天气的时段', daysEmpty:'未来 7 天都没有天气（全晴）。',
+    runsLabel:'接下来的天气时段（起始时间）',
+    thStart:'开始', thWeather:'天气', thFlipped:'反转后（日夜对调）', thDuration:'持续',
+    allLabel:'全部 66 章 · 未来 24 小时的天气时段（用来和游戏里那条对照）',
+    thNum:'#', thChapter:'章节', thPeriods:'时段', allClear:'全晴',
+    honeyDaysLabel:'甜甜蜜树 · 未来 14 天位置与结草儿形态',
+    thDate:'日期', thHoneyLoc:'甜甜蜜树位置', thBurmy:'结草儿形态', thChapter2:'所在章节',
+    honeyDaysLegend:'形态只看地形 bg：cave / mountain → 砂土蓑衣，town → 垃圾蓑衣，其余 → 草木蓑衣。天气不影响形态。日期按巴黎时间换日。',
+    nowClear:'晴（无天气）', clear:'晴', nowPrefix:'现在 ', chapterPrefix:'章节 ', reversed:'反转后：',
+    terrain:'地形 ', burmy:'结草儿 ', metaChapter:'章节 ', today:'今天', hours:' 小时' },
+  en:{ title:"Poke'Catch Weather Forecast", h1:"Poke'Catch · Weather Forecast",
+    sub:'Recomputed with the deterministic algorithm from <code>CONFIG.WEATHER</code>: one slot per hour; <code>FNV("ch+chapter|slot")</code> decides whether weather occurs; the type is drawn by aggregated chapter weights; clear skies are excluded at night.',
+    chapterLabel:'Select your chapter:', daynightLabel:'Day/Night mode (whether weather occurs is unaffected; only the type changes)',
+    modeReal:'Real day/night', modeDay:'Force day', modeNight:'Force night',
+    modeLegend:'Force day/night = the result after flipping day/night. In real mode, if the flipped type differs, an extra ⇄Rain line appears in the cell.',
+    honeyLabel:"Honey Tree · Today's location and Burmy form (changes at 00:00 Paris time)",
+    honeyLegend:'Form depends only on terrain bg; weather has no effect; the 14-day rotation table is at the bottom of the page.',
+    h24Label:'Next 24 hours (one cell per hour, empty = clear)', h24Legend:'Yellow border = the current hour.',
+    daysLabel:'Next 7 days · Hours with weather each day', daysEmpty:'No weather in the next 7 days (all clear).',
+    runsLabel:'Upcoming weather periods (start time)',
+    thStart:'Start', thWeather:'Weather', thFlipped:'Flipped (day↔night)', thDuration:'Duration',
+    allLabel:'All 66 chapters · Weather periods in the next 24h (to compare with the in-game one)',
+    thNum:'#', thChapter:'Chapter', thPeriods:'Periods', allClear:'All clear',
+    honeyDaysLabel:'Honey Tree · Location and Burmy form for the next 14 days',
+    thDate:'Date', thHoneyLoc:'Honey Tree location', thBurmy:'Burmy form', thChapter2:'Chapter',
+    honeyDaysLegend:'Form depends only on terrain bg: cave / mountain → Sandy Cloak, town → Trash Cloak, others → Plant Cloak. Weather has no effect on form. Dates change at Paris midnight.',
+    nowClear:'Clear (no weather)', clear:'Clear', nowPrefix:'Now ', chapterPrefix:'Chapter ', reversed:'Flipped: ',
+    terrain:'Terrain ', burmy:'Burmy ', metaChapter:'Chapter ', today:'Today', hours:' h' }
+};
+const WX = {rain:{zh:'雨',en:'Rain'},storm:{zh:'雷暴',en:'Thunderstorm'},sun:{zh:'大晴天',en:'Harsh Sunlight'},sand:{zh:'沙暴',en:'Sandstorm'},snow:{zh:'下雪',en:'Snow'},ash:{zh:'火山灰',en:'Volcanic Ash'},fog:{zh:'起雾',en:'Fog'},blizzard:{zh:'暴风雪',en:'Blizzard'},breeze:{zh:'微风',en:'Breeze'}};
+const WEN = k => WX[k][L];
+const REG = {kanto:{zh:'关都',en:'Kanto'},johto:{zh:'城都',en:'Johto'},hoenn:{zh:'丰缘',en:'Hoenn'},sinnoh:{zh:'神奥',en:'Sinnoh'}};
+const FORM = {plant:{zh:'草木蓑衣',en:'Plant Cloak',cls:'wx-snow'},sand:{zh:'砂土蓑衣',en:'Sandy Cloak',cls:'wx-sand'},trash:{zh:'垃圾蓑衣',en:'Trash Cloak',cls:'wx-ash'}};
+const CHAP_EN = {'森林徽章':'Forest Badge','遗迹徽章':'Relic Badge','铺石徽章':'Cobble Badge','矿山徽章':'Mine Badge','湿地徽章':'Fen Badge'};
+const chapName = zh => L==='zh' ? zh : (CHAP_EN[zh]||zh);
+const HONEY_LOC = {
+  'Route 205 (sud)':{zh:'205号道路（南）',en:'Route 205 (south)'},
+  'Route 206':{zh:'206号道路',en:'Route 206'},
+  'Route 208':{zh:'208号道路',en:'Route 208'},
+  'Route 209':{zh:'209号道路',en:'Route 209'},
+  'Route 210 (sud)':{zh:'210号道路（南）',en:'Route 210 (south)'},
+  'Route 211':{zh:'211号道路',en:'Route 211'},
+  'Route 212 (nord)':{zh:'212号道路（北）',en:'Route 212 (north)'},
+  'Route 214':{zh:'214号道路',en:'Route 214'},
+  'Route 215':{zh:'215号道路',en:'Route 215'},
+  'Route 218':{zh:'218号道路',en:'Route 218'},
+  'Pré de Floraville':{zh:'花苑花田',en:'Floaroma Meadow'},
+  'Les Éoliennes':{zh:'山谷发电厂',en:'Valley Windworks'},
+  'Forêt Vestigion':{zh:'百代森林',en:'Eterna Forest'},
+  'Square Paisible':{zh:'互动广场',en:'Amity Square'}
+};
+
+function fnv(s){let h=2166136261;for(let i=0;i<s.length;i++){h=Math.imul(h^s.charCodeAt(i),16777619);}
+h^=h>>>16;h=Math.imul(h,2246822507);h^=h>>>13;h=Math.imul(h,3266489909);h^=h>>>16;return (h>>>0)/4294967296;}
+function slotOf(ms){return Math.floor(ms/SLOT);}
+let MODE = 'real';
+function isNight(slot){ const h = new Date(slot*SLOT).getHours(); return (h>=20 || h<8); }
+function weather(i, slot, force){
+  const c = DATA[i];
+  if(c.fixed){const arr = Array.isArray(c.fixed)?c.fixed:[c.fixed]; return arr[slot % arr.length];}
+  if(!c.w) return null;
+  const key = 'ch'+i;
+  let fe=0; while(fe<64 && fnv(key+'|'+(slot-fe))<CHANCE) fe++;
+  if(fe%2===0) return null;
+  const night = force==='day' ? false : force==='night' ? true : isNight(slot);
+  const items = c.w.filter(([k,v]) => !(night && k==='sun'));
+  if(!items.length) return null;
+  const tot = items.reduce((a,[,v])=>a+v,0);
+  let st = fnv(slot+'|'+key)*tot;
+  for(const [k,v] of items){ st -= v; if(st<=0) return k; }
+  return items[items.length-1][0];
+}
+function altOf(i, slot){
+  const flipped = isNight(slot) ? 'day' : 'night';
+  return weather(i, slot, flipped);
+}
+const sel = document.getElementById('ch');
+const groups = {};
+DATA.forEach((c,i)=>{ (groups[c.reg] = groups[c.reg]||[]).push([i,c]); });
+function buildChapters(){
+  const keep = sel.value;
+  sel.innerHTML='';
+  for(const [reg, list] of Object.entries(groups)){
+    const og = document.createElement('optgroup'); og.label = (REG[reg]||{en:reg,zh:reg})[L]||reg;
+    for(const [i,c] of list){ const o=document.createElement('option'); o.value=i; o.textContent=(i)+'. '+c[L]; og.appendChild(o); }
+    sel.appendChild(og);
+  }
+  if(keep!=='') sel.value = keep;
+}
+function fmt(d){ return d.toLocaleString(LOC[L],{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); }
+function fmtDate(d, withWeekday, tz){
+  const o = {month:'2-digit', day:'2-digit'};
+  if(tz) o.timeZone = tz;
+  const ds = d.toLocaleDateString(LOC[L], o);
+  if(!withWeekday) return ds;
+  const w = {weekday:'short'};
+  if(tz) w.timeZone = tz;
+  const wd = d.toLocaleDateString(LOC[L], w);
+  return L==='zh' ? ds + ' ' + wd : wd + ', ' + ds;
+}
+function render(){
+  const i = +sel.value;
+  const now = Date.now(), s0 = slotOf(now);
+  const F = MODE === 'real' ? undefined : MODE;
+  const cur = weather(i, s0, F);
+  const curAlt = MODE === 'real' ? altOf(i, s0) : null;
+  document.getElementById('nowicon').textContent = cur ? ICON[cur] : '☀️';
+  document.getElementById('nowname').textContent = cur ? WEN(cur) : T[L].nowClear;
+  document.getElementById('nowtime').textContent =
+    T[L].nowPrefix + new Date(now).toLocaleString(LOC[L],{hour:'2-digit',minute:'2-digit'}) +
+    ' · ' + T[L].chapterPrefix + DATA[i][L] +
+    (curAlt && curAlt !== cur ? ' · ' + T[L].reversed + WEN(curAlt) : '');
+
+  const h24 = document.getElementById('h24'); h24.innerHTML='';
+  for(let k=0;k<24;k++){
+    const s=s0+k, w=weather(i,s,F), d=new Date(s*SLOT);
+    const alt = MODE === 'real' ? altOf(i,s) : null;
+    const c=document.createElement('div');
+    c.className='cell'+(w?' wx-'+w:'')+(k===0?' now-r':'');
+    c.innerHTML='<b>'+(w?ICON[w]:'')+'</b><small>'+String(d.getHours()).padStart(2,'0')+':00</small>'+
+      (alt && alt!==w ? '<span class="alt">⇄'+WEN(alt)+'</span>' : '');
+    c.title=(w?WEN(w):T[L].clear)+(alt && alt!==w ? ' ｜ 反转后：'+WEN(alt) : '');
+    h24.appendChild(c);
+  }
+
+  const days=document.getElementById('days'); days.innerHTML='';
+  const byDay={};
+  for(let k=0;k<24*7;k++){
+    const s=s0+k, w=weather(i,s,F); if(!w) continue;
+    const d=new Date(s*SLOT), key=d.toDateString();
+    (byDay[key]=byDay[key]||[]).push({h:d.getHours(),w});
+  }
+  for(const [key, arr] of Object.entries(byDay)){
+    const div=document.createElement('div'); div.className='day';
+    const d=new Date(key);
+    div.innerHTML='<h3>'+fmtDate(d, true)+'</h3>'+
+      arr.map(x=>`<span class="cell wx-${x.w}" style="display:inline-block;margin:2px 4px 2px 0"><b>${ICON[x.w]}</b><small>${String(x.h).padStart(2,'0')}:00</small></span>`).join('');
+    days.appendChild(div);
+  }
+  if(!Object.keys(byDay).length) days.innerHTML='<div class="kv">'+T[L].daysEmpty+'</div>';
+
+  const runs=document.getElementById('runs'); runs.innerHTML='';
+  let prev=weather(i,s0,F), start=s0;
+  const list=[];
+  for(let k=1;k<=24*3;k++){
+    const s=s0+k, w=weather(i,s,F);
+    if(w!==prev){ list.push([start,prev,k? (s-start):0]); start=s; prev=w; }
+  }
+  list.push([start,prev,0]);
+  list.filter(x=>x[1]).slice(0,14).forEach(([s,w])=>{
+    const alt = MODE === 'real' ? altOf(i,s) : null;
+    const tr=document.createElement('tr');
+    tr.innerHTML='<td>'+fmt(new Date(s*SLOT))+'</td><td>'+ICON[w]+' '+WEN(w)+'</td>'+
+      '<td>'+(alt && alt!==w ? '⇄ '+ICON[alt]+' '+WEN(alt) : '—')+'</td>'+
+      '<td>'+ (function(){
+      let n=0; while(n<48 && weather(i,s+n,F)===w) n++; return n+T[L].hours;})() +'</td>';
+    runs.appendChild(tr);
+  });
+}
+document.querySelectorAll('#mode button').forEach(b=>{
+  b.onclick=()=>{ MODE=b.dataset.m;
+    document.querySelectorAll('#mode button').forEach(x=>x.classList.toggle('on',x===b));
+    render(); };
+});
+
+// all-chapters strip
+function buildAll(){
+  const tb = document.getElementById('all'); tb.innerHTML='';
+  const now = Date.now(), s0 = slotOf(now);
+  DATA.forEach((c,i)=>{
+    const parts=[]; let prev=weather(i,s0);
+    for(let k=1;k<=24;k++){
+      const s=s0+k, w=weather(i,s);
+      if(w!==prev){
+        if(w) parts.push('<span class="cell wx-'+w+'" style="display:inline-block;padding:2px 6px;margin-right:4px"><b style="font-size:13px">'+ICON[w]+'</b><small>'+String(new Date(s*SLOT).getHours()).padStart(2,'0')+':00</small></span>');
+        prev=w;
+      }
+    }
+    const tr=document.createElement('tr');
+    tr.innerHTML='<td>'+i+'</td><td>'+c[L]+'</td><td>'+(parts.join('')||'<span class="kv">'+T[L].allClear+'</span>')+'</td>';
+    tb.appendChild(tr);
+  });
+}
+
+// ---------------- 甜甜蜜树 ----------------
+function formOf(bg){ return (bg==='cave'||bg==='mountain') ? 'sand' : (bg==='town' ? 'trash' : 'plant'); }
+function gt(x){ x=Math.imul(x^x>>>16,2146121005); x=Math.imul(x^x>>>15,2221713035); return ((x^x>>>16)>>>0)/4294967296; }
+const HONEY_U = Math.floor(Date.parse(HONEY.from)/864e5);
+let HST = null;
+function honeySpot(g){
+  if(g < HONEY_U) return HONEY.zones[((Math.imul(g,2654435761)>>>0) % HONEY.zones.length)];
+  if(!HST){
+    const common = HONEY.zones.filter(z => !HONEY.rare.some(grp => grp.includes(z)));
+    HST = {days:[], lo:HONEY.gap[0], hi:HONEY.gap[1], common, round:[], seen:0,
+           at:HONEY.rare.map(()=>0), next:HONEY.rare.map((_,k)=>HONEY_U+2+k*3)};
+  }
+  while(HST.days.length <= g - HONEY_U){
+    const be = HONEY_U + HST.days.length;
+    const kt = HST.next.indexOf(be);
+    if(kt >= 0){
+      const grp = HONEY.rare[kt], ye = HST.at[kt]++;
+      HST.days.push(grp[ye % grp.length]);
+      let G = be + HST.lo + Math.floor(gt(kt*7919 + ye*104729 + 1)*(HST.hi-HST.lo+1));
+      if(HST.next.includes(G)) G += (G-be < HST.hi ? 1 : -1);
+      HST.next[kt] = G;
+    } else {
+      if(!HST.round.length){
+        const wt = Math.floor(HST.seen/HST.common.length), ye = [...HST.common];
+        for(let i=ye.length-1;i>0;i--){ const f = Math.floor(gt(wt*31337+i*7+2)*(i+1)); [ye[i],ye[f]]=[ye[f],ye[i]]; }
+        if(ye[0] === HST.days[HST.days.length-1]) [ye[0],ye[1]]=[ye[1],ye[0]];
+        HST.round = ye;
+      }
+      HST.seen++;
+      HST.days.push(HST.round.shift());
+    }
+  }
+  return HST.days[g - HONEY_U];
+}
+function parisDay(d){
+  const p = new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Paris',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(d);
+  const o={}; p.forEach(x=>o[x.type]=x.value);
+  return Math.floor(Date.UTC(+o.year, +o.month-1, +o.day)/864e5);
+}
+function renderHoney(){
+  const g0 = parisDay(new Date());
+  const z0 = honeySpot(g0), i0 = HONEY.info[z0]||{};
+  const f0 = FORM[formOf(i0.bg)];
+  document.getElementById('honeyzone').textContent = HONEY_LOC[z0]?HONEY_LOC[z0][L]:z0;
+  document.getElementById('honeymeta').textContent =
+    T[L].terrain + ' : ' + (i0.bg||'?') + ' │ ' + T[L].burmy + ' : ' + f0[L] + ' │ ' + T[L].metaChapter + ' : ' + chapName(i0.chapter||'?');
+  const tb = document.getElementById('honeydays'); tb.innerHTML='';
+  for(let k=0;k<14;k++){
+    const g=g0+k, z=honeySpot(g), info=HONEY.info[z]||{};
+    const f=FORM[formOf(info.bg)];
+    const d=new Date(g*864e5);
+    const tr=document.createElement('tr');
+    tr.innerHTML='<td>'+(k===0?T[L].today:fmtDate(d, true, 'UTC'))+'</td>'+
+      '<td>'+(HONEY_LOC[z]?HONEY_LOC[z][L]:z)+'</td>'+
+      '<td><span class="cell '+f.cls+'" style="display:inline-block;padding:2px 8px"><small style="color:var(--fg)">'+f[L]+'</small></span></td>'+
+      '<td class="kv">'+chapName(info.chapter||'')+'</td>';
+    tb.appendChild(tr);
+  }
+}
+
+function applyLang(){
+  document.documentElement.lang = L==='zh'?'zh-CN':'en';
+  document.title = T[L].title;
+  document.querySelectorAll('[data-i18n]').forEach(e=>{ e.textContent = T[L][e.dataset.i18n]; });
+  document.querySelectorAll('[data-i18n-html]').forEach(e=>{ e.innerHTML = T[L][e.dataset.i18nHtml]; });
+  document.querySelectorAll('#lang button').forEach(b=>b.classList.toggle('on', b.dataset.l===L));
+  buildChapters();
+  buildAll();
+}
+function setL(l){ L=l; try{localStorage.setItem('pc_lang',l);}catch(e){} applyLang(); render(); renderHoney(); }
+
+applyLang();
+document.querySelectorAll('#lang button').forEach(b=>{ b.onclick=()=>setL(b.dataset.l); });
+sel.onchange=render;
+sel.value = 0;
+render();
+renderHoney();
+// 每分钟自动重算（跨整点时自动换天气）
+setInterval(()=>{ if(!document.hidden) render(); }, 60000);
+</script>
+</body></html>
